@@ -7,7 +7,7 @@ from time import sleep
 
 from board import BAR, OFF, Board, load_stone_objects, opponent
 from player import Player, choose_num
-from progress import DEFAULT_SAVE, format_move
+from progress import DEFAULT_SAVE, format_entry, format_move
 
 
 HUMAN = "Člověk"
@@ -23,6 +23,7 @@ class Game:
         self.progress = []
         self.next_player = 0
         self.opening_rolls = []
+        self.remaining_rolls = None
 
     def winner(self):
         return next(
@@ -42,11 +43,42 @@ class Game:
             return "backgammon"
         return "gammon"
 
-    def player_round(self, player, opening_rolls=()):
-        player.dices.roll(opening_rolls)
-        print(f"\nNa řadě je {player.name}. Hod: {', '.join(map(str, player.dices.rolls))}")
-        while player.dices.rolls:
-            options = self.board.check_options(player)
+    def roll_turn(self):
+        player = self.players[self.next_player]
+        player.dices.roll(self.opening_rolls)
+        self.opening_rolls = []
+        self.remaining_rolls = player.dices.rolls.copy()
+        self.save_game()
+
+    def legal_options(self):
+        if not self.remaining_rolls or self.winner():
+            return []
+        player = self.players[self.next_player]
+        return self.board.check_options(player.color, self.remaining_rolls)
+
+    def play_move(self, move):
+        player = self.players[self.next_player]
+        self.board.play_option(move, player.color)
+        self.progress.append({"player": player.name, "move": list(move)})
+        self.remaining_rolls.remove(move[2])
+        self.save_game()
+
+    def finish_turn(self):
+        self.next_player = 1 - self.next_player
+        self.remaining_rolls = None
+        self.save_game()
+
+    def player_round(self):
+        player = self.players[self.next_player]
+        if self.remaining_rolls is None:
+            self.roll_turn()
+            roll_label = "Hod"
+        else:
+            roll_label = "Zbývající kostky"
+        if self.remaining_rolls:
+            print(f"\nNa řadě je {player.name}. {roll_label}: {', '.join(map(str, self.remaining_rolls))}")
+        while self.remaining_rolls and not self.winner():
+            options = self.legal_options()
             if not options:
                 print("Žádný další tah není možný.")
                 break
@@ -56,17 +88,15 @@ class Game:
                     print(f"{index}. {format_move(move)}")
                 choice = choose_num("Vyber tah: ", len(options))
             else:
-                choice = player.choose_option(options)
+                choice = player.choose_option(options, self.board)
                 sleep(self.delay)
             move = options[choice - 1]
-            self.board.play_option(move, player.color)
-            self.progress.append({"player": player.name, "move": list(move)})
-            player.dices.rolls.remove(move[2])
+            self.play_move(move)
             print(f"{player.name}: {format_move(move)}")
+        self.finish_turn()
 
     def new_game(self):
-        self.board.reset()
-        self.players = []
+        players = []
         for index in range(2):
             print(f"\nHráč {index + 1}")
             kind = choose_num("1. Člověk, 2. Parní stroj: ", 2)
@@ -74,14 +104,20 @@ class Game:
             if index == 0:
                 color = "W" if choose_num("1. Bílá, 2. Černá: ", 2) == 1 else "K"
             else:
-                color = opponent(self.players[0].color)
-            self.players.append(Player(HUMAN if kind == 1 else COMPUTER, name, color))
+                color = opponent(players[0].color)
+            players.append(Player(HUMAN if kind == 1 else COMPUTER, name, color))
+        self.begin(players)
+
+    def begin(self, players):
+        self.board.reset()
+        self.players = players
         self.progress = []
         rolls = [0, 0]
         while rolls[0] == rolls[1]:
             rolls = [random.randint(1, 6), random.randint(1, 6)]
         self.next_player = int(rolls[1] > rolls[0])
         self.opening_rolls = sorted(rolls, reverse=True)
+        self.remaining_rolls = None
         self.save_game()
 
     def save_game(self):
@@ -93,6 +129,7 @@ class Game:
             },
             "next_player": self.next_player,
             "opening_rolls": self.opening_rolls,
+            "remaining_rolls": self.remaining_rolls,
         }
         for index, player in enumerate(self.players, 1):
             data[f"player_{index}"] = {"name": player.name, "type": player.type, "color": player.color}
@@ -105,7 +142,14 @@ class Game:
             ) as stream:
                 pending = Path(stream.name)
                 json.dump(data, stream, ensure_ascii=False)
-            pending.replace(self.save_path)
+            for pause in (0.02, 0.04, 0.08, 0.16, None):
+                try:
+                    pending.replace(self.save_path)
+                    break
+                except PermissionError as error:
+                    if pause is None or getattr(error, "winerror", None) not in (5, 32, 33):
+                        raise
+                    sleep(pause)
         finally:
             if pending is not None:
                 pending.unlink(missing_ok=True)
@@ -138,6 +182,7 @@ class Game:
 
         turn = data.get("next_player", 0)
         opening = data.get("opening_rolls", [])
+        remaining = data.get("remaining_rolls")
         progress = data["progress"]
         if type(turn) is not int or turn not in (0, 1) or not isinstance(opening, list):
             raise ValueError("Uložená partie obsahuje neplatný tah.")
@@ -145,20 +190,26 @@ class Game:
             type(die) is not int or not 1 <= die <= 6 for die in opening
         )):
             raise ValueError("Uložená partie obsahuje neplatný zahajovací hod.")
+        if remaining is not None and (
+            opening or not isinstance(remaining, list) or len(remaining) > 4
+            or any(type(die) is not int or not 1 <= die <= 6 for die in remaining)
+            or (len(remaining) > 2 and len(set(remaining)) != 1)
+        ):
+            raise ValueError("Uložená partie obsahuje neplatné zbývající kostky.")
         if not isinstance(progress, list):
             raise ValueError("Uložená partie obsahuje neplatnou historii tahů.")
+        for entry in progress:
+            format_entry(entry)
         self.board = board
         self.players = players
         self.progress = progress
         self.next_player = turn
         self.opening_rolls = opening
+        self.remaining_rolls = remaining
 
     def play(self):
         while not (winner := self.winner()):
-            self.player_round(self.players[self.next_player], self.opening_rolls)
-            self.opening_rolls = []
-            self.next_player = 1 - self.next_player
-            self.save_game()
+            self.player_round()
         self.board.show(*self.players)
         print(f"Vyhrává {winner.name} – {self.win_type(winner)}.")
         for player in self.players:
@@ -192,7 +243,7 @@ def main(argv=None):
     try:
         Game(Board(), args.uloha, delay=0 if args.rychle else 0.25).start()
     except (EOFError, KeyboardInterrupt):
-        print("\nKonec hry. Uložená partie obsahuje poslední dokončený tah hráče.")
+        print("\nKonec hry. Pokračovat můžeš z poslední uložené pozice.")
     return 0
 
 

@@ -184,9 +184,15 @@ class Board:
         print(" ---------------------------------------")
         print(f" {player_1.name if player_1.color == 'K' else player_2.name} BAR: {self.stacks[25].stack}\n")
 
-    def check_options(self, player):
-        points = tuple(
+    def position(self):
+        return tuple(
             0 if not place.stack else len(place.stack) * (1 if place.stack[0].color == "W" else -1)
             for place in self.stacks
         )
-        return allowed_turn_options(points, player.color, tuple(player.dices.rolls))
+
+    def check_options(self, color, rolls):
+        return allowed_turn_options(self.position(), color, tuple(rolls))
+
+    def pips(self, color):
+        distances = (*range(24, 0, -1), 25, 25, 0, 0) if color == "W" else (*range(1, 25), 25, 25, 0, 0)
+        return sum(distances[stone.place_history[-1]] for stone in self.stones[color])

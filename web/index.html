@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Vrhcáby · Mour a Rund</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/game.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand">
+      <span class="brand-chip" aria-hidden="true"></span>
+      <div>
+        <p class="brand-note">Mour &amp; Rund</p>
+        <h1>Vrhcáby</h1>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="how-to" class="button quiet" type="button">Jak hrát</button>
+      <button id="new-game" class="button outline" type="button">Nová partie</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="play-area" aria-label="Hrací plocha">
+      <div id="players" class="players" aria-label="Stav hráčů"></div>
+      <div class="table">
+        <div id="board" class="board" role="group" aria-label="Hrací deska vrhcábů"></div>
+      </div>
+      <p class="board-key"><span class="legend-symbol" aria-hidden="true"></span> Bílí 1 až 24 <span class="key-divider" aria-hidden="true"></span> Černí 24 až 1</p>
+    </section>
+
+    <aside class="side" aria-label="Tah a záznam partie">
+      <section class="turn-card" aria-labelledby="turn-title">
+        <div class="eyebrow" id="turn-label">Partie</div>
+        <h2 id="turn-title">Vrhcáby</h2>
+        <div id="dice" class="dice" aria-label="Kostky"></div>
+        <p id="turn-status" class="turn-status" role="status"></p>
+        <div class="turn-actions">
+          <button id="main-action" class="button primary" type="button" disabled>Načítám…</button>
+          <button id="pause" class="button quiet" type="button" hidden>Pozastavit</button>
+        </div>
+        <p id="error" class="alert" role="alert" hidden></p>
+      </section>
+
+      <section class="details-card" aria-labelledby="details-title">
+        <div class="details-head">
+          <h2 id="details-title">Povolené tahy</h2>
+          <button id="hint" class="button quiet compact" type="button" hidden>Nápověda</button>
+        </div>
+        <ol id="moves" class="entries" aria-label="Povolené tahy"></ol>
+        <p id="moves-placeholder" class="placeholder">Po hodu se tu zobrazí dostupné tahy.</p>
+        <details class="history">
+          <summary>Záznam partie</summary>
+          <ol id="history" class="entries" aria-label="Poslední přesuny"></ol>
+          <p id="history-placeholder" class="placeholder">Zatím bez přesunů.</p>
+        </details>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="setup" aria-labelledby="setup-title">
+    <form id="setup-form" class="dialog-content">
+      <h2 id="setup-title">Nová partie</h2>
+      <p id="replace-note" class="placeholder" hidden>Nová partie přepíše uloženou hru.</p>
+      <fieldset>
+        <legend>Bílý hráč</legend>
+        <label>Jméno <input name="white-name" value="Bílý" maxlength="32" autocomplete="off"></label>
+        <label>Hráč <select name="white-kind"><option value="human">Člověk</option><option value="computer">Počítač</option></select></label>
+      </fieldset>
+      <fieldset>
+        <legend>Černý hráč</legend>
+        <label>Jméno <input name="black-name" value="Černý" maxlength="32" autocomplete="off"></label>
+        <label>Hráč <select name="black-kind"><option value="human">Člověk</option><option value="computer" selected>Počítač</option></select></label>
+      </fieldset>
+      <p id="setup-error" class="alert" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button id="cancel-setup" class="button quiet" type="button">Zpět</button>
+        <button class="button primary" type="submit">Rozehrát partii</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rules" aria-labelledby="rules-title">
+    <form method="dialog" class="dialog-content">
+      <h2 id="rules-title">Jak hrát</h2>
+      <ol class="rules-list">
+        <li>Hoď kostkami a vyber svůj kámen. Zvýrazněné body ukazují, kam můžeš táhnout. Tah můžeš zvolit také v seznamu.</li>
+        <li>Samostatný soupeřův kámen lze vyhodit na bar. Kameny na baru se vždy vracejí jako první.</li>
+        <li>Odehraj co nejvíc kostek. Když lze použít jen jednu ze dvou hodnot a obě jsou hratelné, použij vyšší.</li>
+        <li>Kameny můžeš vynášet, jakmile jsou všechny zbývající ve tvé domácí čtvrtině. Vyhraje ten, kdo vynese všech 15.</li>
+      </ol>
+      <button class="button primary">Zpět ke hře</button>
+    </form>
+  </dialog>
+</body>
+</html>

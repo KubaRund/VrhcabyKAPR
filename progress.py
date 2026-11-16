@@ -16,6 +16,13 @@ def format_move(move, *, legacy=False):
     return f"{start} → {end} [{roll}] · {MOVE_LABELS.get(kind, kind)}"
 
 
+def format_entry(row):
+    if isinstance(row, dict):
+        return row["player"], format_move(row["move"])
+    name, move = row
+    return name, format_move(move, legacy=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Vypíše historii tahů uložené partie.")
     parser.add_argument("uloha", type=Path, nargs="?", default=DEFAULT_SAVE)
@@ -23,11 +30,8 @@ def main(argv=None):
     try:
         data = json.loads(args.uloha.read_text(encoding="utf-8"))
         for row in data["progress"]:
-            if isinstance(row, dict):
-                print(f"{row['player']}: {format_move(row['move'])}")
-            else:
-                name, move = row
-                print(f"{name}: {format_move(move, legacy=True)}")
+            name, description = format_entry(row)
+            print(f"{name}: {description}")
     except (OSError, ValueError, IndexError, KeyError, TypeError) as error:
         parser.error(str(error))
     return 0
