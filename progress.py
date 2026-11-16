@@ -1,64 +1,37 @@
-from time import sleep
-import os_comands as os
+import argparse
 import json
-import colorama as cl
+from pathlib import Path
+
+from board import MOVE_LABELS
 
 
-def set_color(line, move_type):
-    cl.init()
-    match move_type:
-        case "KILL":
-            line = cl.Fore.LIGHTRED_EX + line
-        case "SAVE":
-            line = cl.Fore.GREEN + line
-        case "END":
-            line = cl.Fore.YELLOW + line
-        case "move":
-            line = cl.Fore.WHITE + line
-    return line
+DEFAULT_SAVE = Path("save_file.json")
 
 
-def show_data():
-    print("PROGRESS:\ntoto je progres hry vrhcáby \n\n---------------------\n")
-    data = read_progress()
-    for index in range(0, len(data)):
-        line = data[index]
-        player_name = line[0]
-        option = line[1]
-        line = "\n" if index > 0 and data[index - 1][0] != player_name else ""
-        line += f"{player_name}: {option[0]} -> {option[1]}, [{option[2]}] - {option[3]}"
-        line = set_color(line, option[3])
-        print(line)
+def format_move(move, *, legacy=False):
+    start, end, roll, kind = move
+    if not legacy:
+        start = "bar" if start >= 24 else start + 1
+        end = "domeček" if end >= 26 else end + 1
+    return f"{start} → {end} [{roll}] · {MOVE_LABELS.get(kind, kind)}"
 
 
-def show_last_line():
-    data = read_progress()
-    line = data[-1]
-    player_name = line[0]
-    option = line[1]
-    line = "\n" if len(data) > 1 and player_name != data[-2][0] else ""
-    line += f"{player_name}: {option[0]} -> {option[1]}, [{option[2]}] - {option[3]}"
-    line = set_color(line, option[3])
-    print(line)
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Vypíše historii tahů uložené partie.")
+    parser.add_argument("uloha", type=Path, nargs="?", default=DEFAULT_SAVE)
+    args = parser.parse_args(argv)
+    try:
+        data = json.loads(args.uloha.read_text(encoding="utf-8"))
+        for row in data["progress"]:
+            if isinstance(row, dict):
+                print(f"{row['player']}: {format_move(row['move'])}")
+            else:
+                name, move = row
+                print(f"{name}: {format_move(move, legacy=True)}")
+    except (OSError, ValueError, IndexError, KeyError, TypeError) as error:
+        parser.error(str(error))
+    return 0
 
 
-def check_exit():
-    with open('exit.json', 'r') as file:
-        status = json.load(file)
-    return True if status else False
-
-
-def read_progress():
-    with open("progress.json", "r") as file:
-        read = json.load(file)
-    return read
-
-
-show_data()
-progress = read_progress()
-while not check_exit():
-    sleep(1)
-    if progress != read_progress():
-        show_last_line()
-        progress = read_progress()
-os.kill_window()
+if __name__ == "__main__":
+    raise SystemExit(main())

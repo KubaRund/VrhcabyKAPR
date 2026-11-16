@@ -1,4 +1,82 @@
+from functools import cache
+
 from stone import Stone
+
+
+BAR = {"W": 24, "K": 25}
+OFF = {"W": 26, "K": 27}
+MOVE_LABELS = {
+    "KILL": "Vyhození na bar",
+    "SAVE": "Zajištění bodu",
+    "END": "Vynesení kamene",
+    "MOVE": "Běžný přesun",
+}
+
+
+def opponent(color):
+    return "K" if color == "W" else "W"
+
+
+def single_moves(points, color, roll):
+    direction = 1 if color == "W" else -1
+    order = range(24) if direction == 1 else range(23, -1, -1)
+    bar, off = BAR[color], OFF[color]
+    if points[bar]:
+        start_points = (bar,)
+    else:
+        start_points = [point for point in order if points[point] * direction > 0]
+    for start in start_points:
+        end = order[roll - 1] if start == bar else start + direction * roll
+        if not 0 <= end < 24:
+            if start_points[0] in order[18:] and (end in (-1, 24) or start == start_points[0]):
+                yield (start, off, roll, "END")
+            continue
+        occupants = points[end] * direction
+        if occupants < -1:
+            continue
+        kind = "KILL" if occupants == -1 else "SAVE" if occupants == 1 else "MOVE"
+        yield (start, end, roll, kind)
+
+
+def apply_option(points, option, color):
+    start, end, _, kind = option
+    direction = 1 if color == "W" else -1
+    updated = list(points)
+    if kind == "KILL":
+        updated[end] = 0
+        updated[BAR[opponent(color)]] -= direction
+    updated[start] -= direction
+    updated[end] += direction
+    return tuple(updated)
+
+
+def allowed_turn_options(points, color, rolls):
+    @cache
+    def max_moves(position, remaining):
+        best = 0
+        for die in dict.fromkeys(remaining):
+            rest = without_roll(remaining, die)
+            for move in single_moves(position, color, die):
+                best = max(best, 1 + max_moves(apply_option(position, move, color), rest))
+                if best == len(remaining):
+                    return best
+        return best
+
+    scored = []
+    for die in dict.fromkeys(rolls):
+        rest = without_roll(rolls, die)
+        for move in single_moves(points, color, die):
+            total = 1 + max_moves(apply_option(points, move, color), rest)
+            scored.append(((total, die if total == 1 else 0), move))
+    if not scored:
+        return []
+    best = max(score for score, _ in scored)
+    return [move for score, move in scored if score == best]
+
+
+def without_roll(rolls, die):
+    index = rolls.index(die)
+    return rolls[:index] + rolls[index + 1:]
 
 
 def load_stone_objects(stones):
@@ -22,14 +100,6 @@ def new_stones():  # Vytvoří novou sadu kamenů s jejich pozicemi
               Stone("K", [12], 0), Stone("K", [12], 0), Stone("K", [12], 0), Stone("K", [23], 0), Stone("K", [23], 0)]
     }
     return stones
-
-
-def delete_duplicate_options(options):
-    final_options = []
-    for option in options:
-        if option not in final_options:
-            final_options.append(option)
-    return final_options
 
 
 class Board:
@@ -57,28 +127,18 @@ class Board:
             stacks.append(self.Place(place))
         return stacks
 
-    def move_stone(self, from_place, to_place, player):  # Pohyb kamene na desce
-        stacks = self.stacks
-        color = player.color
-        from_place = 25 if from_place == "BAR" and color == "W" else from_place
-        from_place = 26 if from_place == "BAR" and color == "K" else from_place
-        to_place = 25 if to_place == "BAR" and color == "W" else to_place
-        to_place = 26 if to_place == "BAR" and color == "K" else to_place
-        to_place = 27 if to_place == "OFF" and color == "W" else to_place
-        to_place = 28 if to_place == "OFF" and color == "K" else to_place
-        stacks[to_place - 1].stack.append(stacks[from_place - 1].stack.pop())
-        self.update_stones()
+    def move_stone(self, start, end):
+        stone = self.stacks[start].stack.pop()
+        self.stacks[end].stack.append(stone)
+        stone.place_history.append(end)
+        if end == BAR[stone.color]:
+            stone.deaths += 1
 
-    def update_stones(self):
-        for place_i in range(0, 28):
-            bars_i = [24, 25]
-            place_stack = self.stacks[place_i].stack
-            for stone_object in place_stack:
-                history = stone_object.place_history
-                if history[-1] != place_i:
-                    history.append(place_i)
-                    if place_i in bars_i:
-                        stone_object.deaths += 1
+    def play_option(self, option, color):
+        start, end, _, kind = option
+        if kind == "KILL":
+            self.move_stone(end, BAR[opponent(color)])
+        self.move_stone(start, end)
 
     def show(self, player_1, player_2):  # metoda která vypisuje aktuální stav desky
         print(f"\n {player_1.name if player_1.color == 'W' else player_2.name} BAR: {self.stacks[24].stack}")
@@ -124,81 +184,9 @@ class Board:
         print(" ---------------------------------------")
         print(f" {player_1.name if player_1.color == 'K' else player_2.name} BAR: {self.stacks[25].stack}\n")
 
-    def check_home_board(self, player):  # metoda která kontroluje zda jsou kameny hráče v ohradě
-        stacks = self.stacks
-        home_board = range(18, 24) if player.color == "W" else range(0, 6)
-        off = stacks[26].stack if player.color == "W" else stacks[27].stack
-        suma = len(off)
-        for index in home_board:
-            home_place = stacks[index].stack
-            suma += len(home_place) if home_place and home_place[0].color == player.color else 0
-        return True if suma == 15 else False
-
-    def last_stone_index(self, player):  # vrací index nejvzdálenejšího kamene
-        board = range(0, 24) if player.color == "W" else range(23, -1, -1)
-        last_stone_i = board[23]
-        for index in reversed(board):
-            place = self.stacks[index].stack
-            last_stone_i = index if place and place[0].color == player.color else last_stone_i
-        return last_stone_i
-
-    def check_options(self, player):  # generuje možnosti tahu v zavislostích
-        options = []
-        stacks = self.stacks
-        rolls = [roll for roll in player.dices.rolls if roll != 0]
-        bar = stacks[24].stack if player.color == "W" else stacks[25].stack
-        board = range(0, 24) if player.color == "W" else range(23, -1, -1)
-
-        if bar:                        # Generování možností pro vracení kamenů hráče z baru
-            for roll in rolls:
-                place_i = board[roll - 1]
-                place = stacks[place_i].stack
-                if len(place) == 1 and player.color != place[0].color:
-                    options.append(["BAR", place_i + 1, roll, "Odstranit"])
-                elif len(place) == 1 and player.color == place[0].color:
-                    options.append(["BAR", place_i + 1, roll, "Uchránit"])
-                elif not place or (place and player.color == place[0].color):
-                    options.append(["BAR", place_i + 1, roll, "Běžný přesun"])
-        else:
-
-
-            # Generování možností pro pohyb z vrcholů na desce
-            home_board_check = self.check_home_board(player)
-            last_stone_i = self.last_stone_index(player)
-            for num in range(1, 25):
-                place_i = board[num - 1]
-                place = stacks[place_i].stack
-                if place and place[0].color == player.color:
-                    for roll in rolls:
-                        if num + roll > 24:
-                            if home_board_check and (num + roll == 25 or (num + roll > 25 and place_i == last_stone_i)):
-                                options.append([place_i + 1, "OFF", roll, "END"])
-                        else:
-                            to_place_i = board[num - 1 + roll]
-                            to_place = stacks[to_place_i].stack
-                            if len(to_place) == 1 and player.color != to_place[0].color:
-                                options.append([place_i + 1, to_place_i + 1, roll, "Odstranit"])
-                            elif (len(to_place) == 1 and player.color == to_place[0].color) \
-                                    or (to_place and player.color == to_place[0].color and len(place) == 1):
-                                options.append([place_i + 1, to_place_i + 1, roll, "Uchránit"])
-                            elif not to_place or (to_place and to_place[0].color == player.color):
-                                options.append([place_i + 1, to_place_i + 1, roll, "Běžný přesun"])
-
-
-
-        final_options = delete_duplicate_options(options)
-        player.options = final_options
-        return final_options
-
-    def print_options(self, player):
-        options = self.check_options(player)
-        if len(options) == 0:
-            pass
-        else:
-            num = 1
-            print(f"možnosti tahu ({player.color}):")
-            print("-----------------------------------------------")
-            for option in options:
-                print(f"{num}:   {option[0]} -> {option[1]}, [{option[2]}], {option[3]}")
-                num += 1
-            print("-----------------------------------------------")
+    def check_options(self, player):
+        points = tuple(
+            0 if not place.stack else len(place.stack) * (1 if place.stack[0].color == "W" else -1)
+            for place in self.stacks
+        )
+        return allowed_turn_options(points, player.color, tuple(player.dices.rolls))
